@@ -724,9 +724,9 @@ function renderAnthropic(res: ServerResponse, stream: boolean, norm: Normalized,
 /**
  * Serve one client request: walk the ranked candidates, stop at the first
  * real answer. A refusal is never an answer: the failure is recorded for the
- * trail header and the next-best free model is tried. A 401/400 spends no
- * budget and is this entry's bug, so it is logged and skipped like any other
- * refusal; the prompt is given up on only when the list runs out.
+ * trail header and the next-best free model is tried. A 401 is the trial's
+ * key, shared by every candidate, so it ends the walk at once; the prompt is
+ * given up on only when the list runs out or the key is refused.
  */
 async function serve(res: ServerResponse, clientApi: 'openai' | 'anthropic', body: Json): Promise<void> {
   const requires = requirementsFor(body);
@@ -743,6 +743,9 @@ async function serve(res: ServerResponse, clientApi: 'openai' | 'anthropic', bod
     }
     log(`model ${cand.id} refused HTTP ${result.status} (${result.code}): failing over`);
     failures.push({ status: result.status, code: result.code, model: cand.id });
+    // A 401 is the trial's key, not the model: every candidate shares it, so
+    // trying the rest only burns gateway calls. Give up on this prompt now.
+    if (result.status === 401) break;
   }
   sendError(
     res,
